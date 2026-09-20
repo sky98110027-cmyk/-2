@@ -47,3 +47,6 @@ data/
 .mcp.json
 .youtube-client.json
 .youtube-token.json
+
+# 앱이 만들어낸 스킬은 형님 자료다
+.claude/skills/
