@@ -310,3 +310,311 @@ pre {
   .top h1 { font-size: 25px; }
   main { padding: 14px 16px; }
 }
+
+/* ------------------------------------------------------------- 미리보기 */
+
+.stage-wrap {
+  background: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+/* 실제 화면을 흉내 낸 틀. 글자 크기는 1920px 기준으로 환산해서 얹는다. */
+.stage {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 16 / 9;
+  background:
+    radial-gradient(120% 90% at 50% 25%, #6a5a45 0%, #2b241b 60%, #15110c 100%);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.stage.ratio-9-16 { aspect-ratio: 9 / 16; max-width: 300px; }
+.stage.ratio-1-1 { aspect-ratio: 1 / 1; max-width: 420px; }
+
+.stage::after {
+  content: "장면 그림이 들어갈 자리";
+  position: absolute;
+  top: 12px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.stage-cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  padding: 0 4%;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.stage-cap.pos-bottom { bottom: 0; }
+.stage-cap.pos-top { top: 0; }
+.stage-cap.pos-middle { top: 50%; transform: translateY(-50%); }
+
+.stage-cap .band {
+  display: inline-block;
+  padding: 0.12em 0.5em;
+  border-radius: 0.1em;
+}
+
+/* ------------------------------------------------------------- 손잡이 */
+
+.knobs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin: 14px 0 18px;
+}
+
+.knob { display: block; }
+
+.knob > span {
+  display: block;
+  font-weight: 600;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.knob > span b { color: var(--accent); }
+
+.knob select {
+  padding: 10px 12px;
+  font-size: 16px;
+}
+
+.knob input[type="color"] {
+  width: 100%;
+  height: 48px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.knob input[type="range"] {
+  width: 100%;
+  height: 40px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.warn-box {
+  border: 2px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-top: 14px;
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------- 명령창 */
+
+.say-wrap {
+  background: var(--panel);
+  border: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+.say-label { font-size: 20px; }
+
+#t-say { font-size: 19px; }
+
+.hint {
+  margin: 10px 0 0;
+  font-size: 15px;
+  color: var(--ink-soft);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 6px;
+}
+
+.chip {
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--ink-soft);
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.chip:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ------------------------------------------------------------- 대화 기록 */
+
+.log { margin-top: 20px; }
+
+.turn { margin-bottom: 18px; }
+
+.turn .me {
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font-weight: 600;
+  white-space: pre-wrap;
+  margin-bottom: 10px;
+}
+
+.turn .it {
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  white-space: pre-wrap;
+}
+
+.turn .it.working { border-style: dashed; color: var(--ink-soft); }
+
+.turn .it.bad { border-color: var(--err); color: var(--err); font-weight: 600; }
+
+.mini {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.mini .item {
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: var(--bg);
+}
+
+.mini .item b { display: block; font-size: 17px; }
+
+.mini .item .sub { font-size: 15px; color: var(--ink-soft); }
+
+/* ------------------------------------------------------------- 파일 넣기 */
+
+.side-by-side {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.side-by-side .field { margin-bottom: 0; }
+
+.drop {
+  border: 3px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 18px 16px;
+  text-align: center;
+  cursor: pointer;
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+.drop:hover, .drop.over {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.drop.over { border-style: solid; }
+
+.drop.has { border-style: solid; border-color: var(--ok); }
+
+.drop b { font-size: 17px; }
+
+.drop .sub { font-size: 14px; color: var(--ink-soft); }
+
+/* ------------------------------------------------------------- 연결 */
+
+.wire {
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 14px;
+}
+
+.wire.must { border-color: var(--accent); border-width: 3px; }
+
+.wire .head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.wire .head h3 { margin: 0; font-size: 21px; border: none; padding: 0; }
+
+.badge {
+  font-size: 14px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 2px solid var(--line);
+  color: var(--ink-soft);
+}
+
+.badge.on { color: var(--ok); border-color: var(--ok); }
+.badge.off { color: var(--ink-soft); }
+.badge.must { color: var(--accent); border-color: var(--accent); }
+
+.wire .note { color: var(--ink-soft); margin: 0 0 12px; }
+
+.wire .now { font-family: ui-monospace, monospace; color: var(--ink-soft); }
+
+/* ------------------------------------------------------------- 준비 점검 */
+
+.step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.step:last-child { border-bottom: none; }
+
+.step .mark {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 15px;
+  border: 2px solid var(--line);
+  color: var(--ink-soft);
+}
+
+.step.ok .mark { color: var(--ok); border-color: var(--ok); }
+.step.no .mark { color: var(--warn); border-color: var(--warn); }
+
+.step .body b { display: block; font-size: 17px; }
+
+.step .body .sub { font-size: 15px; color: var(--ink-soft); }
+
+.step .body .need { font-size: 15px; color: var(--warn); font-weight: 600; }

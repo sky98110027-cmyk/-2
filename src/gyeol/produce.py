@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from . import style as style_mod
 from .config import DEFAULT_AUDIENCE
 from .llm import structured
 from .prompts import WRITER_EXTRA_HEADER, WRITER_SYSTEM, WRITER_USER
@@ -45,7 +46,11 @@ def write_script(
     return script
 
 
-def as_production_order(script: dict[str, Any], dna: dict[str, Any]) -> dict[str, Any]:
+def as_production_order(
+    script: dict[str, Any],
+    dna: dict[str, Any],
+    style: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """영상 생성 도구에 그대로 넘길 제작 지시서.
 
     힉스필드든 톱뷰든, 장면별 프롬프트만 있으면 붙는다.
@@ -71,13 +76,18 @@ def as_production_order(script: dict[str, Any], dna: dict[str, Any]) -> dict[str
             }
         )
 
+    look = style_mod.normalize(style)
     return {
         "title": (script.get("title_candidates") or [script.get("topic", "")])[0],
         "topic": script.get("topic", ""),
-        "aspect_ratio": "16:9",
+        "aspect_ratio": look["aspect_ratio"],
         "total_seconds": script.get("total_seconds", 0),
         "style_note": style_tail,
         "voice_note": f"{narration.get('pace', '')} / {narration.get('pause_rule', '')}".strip(" /"),
         "bgm_note": narration.get("bgm", ""),
+        "caption_style": look["caption"],
+        "title_style": look["title"],
+        # 영상은 그대로 두고 자막만 다시 구울 때 쓴다
+        "caption_ass_style": style_mod.to_ass_style(look, "caption"),
         "shots": shots,
     }

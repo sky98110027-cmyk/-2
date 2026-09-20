@@ -3,8 +3,9 @@
 브라우저를 안 켜고 싶을 때 쓴다.
 
   python -m gyeol 결뽑기 <영상주소> --저장
+  python -m gyeol 결뽑기 --파일 받아둔영상.mp4 --저장
   python -m gyeol 목록
-  python -m gyeol 대본 <결이름> "주제" --분 5
+  python -m gyeol 대본 <결이름> "주제" --분 5 --폴더 "독립군 3부작"
   python -m gyeol 서버
 """
 
@@ -15,7 +16,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import produce, skillgen, source, store
+from . import intake, produce, skillgen, source, store
 from .analyze import analyze
 from .config import DEFAULT_AUDIENCE
 from .llm import LLMUnavailable
@@ -29,7 +30,10 @@ def _die(message: str) -> None:
 
 def cmd_analyze(args: argparse.Namespace) -> None:
     try:
-        if args.대본:
+        if args.파일:
+            print(f"파일을 읽는 중입니다 … {args.파일}")
+            material = intake.from_file(args.파일, url=args.주소 or "")
+        elif args.대본:
             material = source.material_from_text(
                 Path(args.대본).read_text(encoding="utf-8"), url=args.주소 or ""
             )
@@ -101,7 +105,10 @@ def cmd_write(args: argparse.Namespace) -> None:
     except (LLMUnavailable, ValueError) as exc:
         _die(str(exc))
 
-    record = store.save_script(args.결이름, script)
+    try:
+        record = store.save_script(args.결이름, script, folder_name=args.폴더 or "")
+    except ValueError as exc:
+        _die(str(exc))
     text = store.as_plain_text(script)
     print("\n" + text)
 
@@ -134,6 +141,10 @@ def build_parser() -> argparse.ArgumentParser:
     a = sub.add_parser("결뽑기", help="영상에서 결을 뽑는다")
     a.add_argument("주소", nargs="?", default="", help="유튜브 영상 주소")
     a.add_argument("--대본", help="자막 대신 쓸 대본 파일 경로")
+    a.add_argument(
+        "--파일",
+        help="받아둔 파일에서 뽑기. 대본(.txt) 자막(.srt .vtt .ass) 자막이 박힌 영상",
+    )
     a.add_argument("--메모", help="화면과 편집에 관한 메모")
     a.add_argument("--타깃", default=DEFAULT_AUDIENCE, help="시청 타깃")
     a.add_argument("--저장", action="store_true", help="뽑은 결을 스킬로 저장한다")
@@ -146,6 +157,7 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("결이름", help="목록에 나오는 [대괄호] 안의 이름")
     w.add_argument("주제", help="이번 영상 주제")
     w.add_argument("--분", type=int, default=5, help="목표 길이(분)")
+    w.add_argument("--폴더", help="결과를 담을 폴더 이름. 안 주면 날짜로 짓는다")
     w.add_argument("--메모", help="이번 영상에만 적용할 요청")
     w.add_argument("--타깃", default=DEFAULT_AUDIENCE, help="시청 타깃")
     w.set_defaults(func=cmd_write)
@@ -160,8 +172,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
-    if args.명령 == "결뽑기" and not args.주소 and not args.대본:
-        _die("영상 주소를 넣거나 --대본 으로 대본 파일을 지정해주세요.")
+    if args.명령 == "결뽑기" and not (args.주소 or args.대본 or args.파일):
+        _die(
+            "영상 주소를 넣거나, --파일 로 받아둔 파일을 지정해주세요.\n"
+            f"받을 수 있는 파일 : {', '.join(intake.받는것)}"
+        )
     args.func(args)
 
 

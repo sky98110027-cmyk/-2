@@ -12,20 +12,22 @@ def temp_data(monkeypatch):
         root = Path(tmp)
         from gyeol import config, store
 
-        monkeypatch.setattr(config, "DATA_DIR", root)
-        monkeypatch.setattr(config, "SKILLS_DIR", root / "skills")
-        monkeypatch.setattr(config, "PROJECTS_DIR", root / "projects")
-        monkeypatch.setattr(config, "CLAUDE_SKILLS_DIR", root / "claude-skills")
-        monkeypatch.setattr(store, "SKILLS_DIR", root / "skills")
-        monkeypatch.setattr(store, "PROJECTS_DIR", root / "projects")
-        monkeypatch.setattr(store, "CLAUDE_SKILLS_DIR", root / "claude-skills")
+        for mod in (config, store):
+            monkeypatch.setattr(mod, "DATA_DIR", root, raising=False)
+            monkeypatch.setattr(mod, "SKILLS_DIR", root / "skills", raising=False)
+            monkeypatch.setattr(mod, "PROJECTS_DIR", root / "projects", raising=False)
+            monkeypatch.setattr(mod, "CLAUDE_SKILLS_DIR", root / "claude-skills", raising=False)
 
-        def ensure():
-            for d in (root, root / "skills", root / "projects"):
-                d.mkdir(parents=True, exist_ok=True)
+        # 연결 정보 파일은 진짜를 건드리면 안 된다. 키가 날아간다.
+        from gyeol import connect
 
-        monkeypatch.setattr(store, "ensure_dirs", ensure)
-        ensure()
+        monkeypatch.setattr(connect, "ENV_FILE", root / ".env")
+        monkeypatch.setattr(connect, "MCP_FILE", root / ".mcp.json")
+        for spec in connect.연결목록:
+            monkeypatch.delenv(spec["key"], raising=False)
+
+        # ensure_dirs 는 바꿔치지 않는다. 진짜 코드가 도는 걸 봐야 한다.
+        store.ensure_dirs()
         yield root
 
 

@@ -28,7 +28,8 @@ def _client():
     if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         raise LLMUnavailable(
             "클로드 API 키가 없습니다.\n"
-            "터미널에서 export ANTHROPIC_API_KEY=키값 을 실행한 뒤 앱을 다시 켜주세요."
+            "앱을 끄셨다가 시작 파일(start.command 또는 start.bat)을 다시 눌러주세요.\n"
+            "그때 키를 한 번만 물어봅니다."
         )
     return anthropic.Anthropic()
 

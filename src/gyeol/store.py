@@ -10,10 +10,18 @@ import json
 import re
 import shutil
 from datetime import datetime, timezone
+from uuid import uuid4
 from pathlib import Path
 from typing import Any
 
-from .config import CLAUDE_SKILLS_DIR, PROJECTS_DIR, SKILLS_DIR, ensure_dirs
+from . import style as style_mod
+from .config import CLAUDE_SKILLS_DIR, DATA_DIR, PROJECTS_DIR, SKILLS_DIR
+
+
+def ensure_dirs() -> None:
+    """지금 지정된 자리에 폴더가 있는지 확인한다."""
+    for d in (DATA_DIR, SKILLS_DIR, PROJECTS_DIR):
+        d.mkdir(parents=True, exist_ok=True)
 
 
 class NotFound(Exception):
@@ -131,23 +139,143 @@ def _safe(slug: str) -> str:
 
 # ------------------------------------------------------------------- 대본
 
-def save_script(slug: str, script: dict[str, Any]) -> dict[str, Any]:
-    """만든 대본을 날짜별로 쌓아둔다."""
+def save_script(
+    slug: str,
+    script: dict[str, Any],
+    style: dict[str, Any] | None = None,
+    folder_name: str = "",
+) -> dict[str, Any]:
+    """만든 대본을 폴더 하나에 담아 쌓아둔다.
+
+    folder_name 을 주면 그 이름으로 폴더를 만든다.
+    안 주면 결 이름과 시각으로 짓는다.
+    """
     ensure_dirs()
     slug = _safe(slug)
-    project_id = f"{slug}-{datetime.now().strftime('%H%M%S')}"
-    folder = PROJECTS_DIR / project_id
-    folder.mkdir(parents=True, exist_ok=True)
-
+    project_id = _free_project_id(slug, folder_name)
     record = {
         "project_id": project_id,
         "skill_slug": slug,
         "topic": script.get("topic", ""),
         "created_at": _now(),
+        "updated_at": _now(),
         "script": script,
+        "style": style_mod.normalize(style),
+        "history": [],
     }
+    _write_record(record)
+    return record
+
+
+# 파일 이름에 쓰면 안 되는 글자와, 윈도우가 못 쓰게 막아둔 이름
+_BAD_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_RESERVED = {
+    "con", "prn", "aux", "nul",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+}
+
+
+def clean_folder_name(name: str) -> str:
+    """형님이 지은 폴더 이름을 파일 시스템이 받아들일 꼴로 다듬는다.
+
+    한글은 그대로 둔다. 폴더를 열었을 때 알아볼 수 있어야 하니까.
+    막는 것은 폴더 밖으로 나가게 하거나 운영체제가 싫어하는 글자뿐이다.
+    """
+    name = _BAD_CHARS.sub(" ", str(name or ""))
+    name = re.sub(r"\s+", " ", name).strip()
+    name = name.strip(". ")  # 윈도우는 점이나 공백으로 끝나는 이름을 싫어한다
+
+    if not name or name in (".", ".."):
+        raise ValueError("폴더 이름을 적어주세요.")
+    if name.split(".")[0].lower() in _RESERVED:
+        raise ValueError(f"'{name}' 은 컴퓨터가 쓰는 이름이라 못 씁니다. 다른 이름으로 지어주세요.")
+
+    return name[:60].strip(". ")
+
+
+def _free_project_id(slug: str, folder_name: str = "") -> str:
+    """아직 안 쓰인 작업 이름을 고른다.
+
+    형님이 이름을 지으셨으면 그 이름을 쓴다. 같은 이름이 있으면 뒤에 숫자를 붙인다.
+    안 지으셨으면 결 이름과 시각으로 짓는다.
+
+    여러 편을 같이 돌리면 저장이 같은 초에 몰린다.
+    시각만으로 이름을 지으면 서로 덮어쓴다. 그래서 뒤에 무작위 네 자를 붙인다.
+    """
+    if folder_name:
+        base = clean_folder_name(folder_name)
+        for n in range(1, 200):
+            candidate = base if n == 1 else f"{base} ({n})"
+            try:
+                (PROJECTS_DIR / candidate).mkdir(parents=True, exist_ok=False)
+                return candidate
+            except FileExistsError:
+                continue
+        raise ValueError(f"'{base}' 로 시작하는 폴더가 너무 많습니다. 다른 이름으로 지어주세요.")
+
+    stamp = datetime.now().strftime("%H%M%S")
+    for _ in range(50):
+        candidate = f"{slug}-{stamp}-{uuid4().hex[:4]}"
+        try:
+            (PROJECTS_DIR / candidate).mkdir(parents=True, exist_ok=False)
+            return candidate
+        except FileExistsError:
+            continue
+    raise RuntimeError("작업 이름을 만들지 못했습니다. 잠시 뒤에 다시 해주세요.")
+
+
+def _project_folder(project_id: str) -> Path:
+    """작업 폴더 자리. 폴더 밖으로 나가는 이름은 막는다."""
+    name = str(project_id or "")
+    if not name or name != clean_folder_name_or_blank(name):
+        raise NotFound(f"'{project_id}' 은 올바른 작업 이름이 아닙니다.")
+    return PROJECTS_DIR / name
+
+
+def clean_folder_name_or_blank(name: str) -> str:
+    try:
+        return clean_folder_name(name)
+    except ValueError:
+        return ""
+
+
+def _write_record(record: dict[str, Any]) -> None:
+    folder = _project_folder(record["project_id"])
+    folder.mkdir(parents=True, exist_ok=True)
     _write_json(folder / "script.json", record)
-    (folder / "script.txt").write_text(as_plain_text(script), encoding="utf-8")
+    (folder / "script.txt").write_text(as_plain_text(record["script"]), encoding="utf-8")
+    (folder / "caption.ass.txt").write_text(
+        style_mod.to_ass_style(record["style"], "caption"), encoding="utf-8"
+    )
+
+
+def get_script(project_id: str) -> dict[str, Any]:
+    """저장된 작업 하나를 꺼낸다."""
+    path = _project_folder(project_id) / "script.json"
+    if not path.exists():
+        raise NotFound(f"'{project_id}' 작업을 찾을 수 없습니다.")
+    record = _read_json(path)
+    record.setdefault("history", [])
+    record["style"] = style_mod.normalize(record.get("style"))
+    return record
+
+
+def update_script(
+    project_id: str,
+    script: dict[str, Any],
+    style: dict[str, Any],
+    note: str = "",
+) -> dict[str, Any]:
+    """고친 결과를 덮어쓴다. 무엇을 고쳤는지도 같이 남긴다."""
+    record = get_script(project_id)
+    record["script"] = script
+    record["style"] = style_mod.normalize(style)
+    record["topic"] = script.get("topic", record.get("topic", ""))
+    record["updated_at"] = _now()
+    if note:
+        record["history"].append({"at": _now(), "note": note})
+    _write_record(record)
     return record
 
 
@@ -226,3 +354,50 @@ def as_plain_text(script: dict[str, Any]) -> str:
         lines += ["[태그]", ", ".join(tags), ""]
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+# ------------------------------------------------------------- 저장 위치 바꾸기
+
+def current_paths() -> dict[str, str]:
+    """지금 어디에 쌓고 있는지."""
+    return {
+        "data_dir": str(DATA_DIR),
+        "skills_dir": str(SKILLS_DIR),
+        "projects_dir": str(PROJECTS_DIR),
+        "claude_skills_dir": str(CLAUDE_SKILLS_DIR),
+    }
+
+
+def set_data_dir(path: str) -> dict[str, str]:
+    """저장 폴더를 옮긴다. 옮긴 뒤에 만든 것부터 새 자리에 쌓인다.
+
+    이미 있던 파일은 옮기지 않는다.
+    형님이 직접 보고 옮기시는 게 안전하다.
+    """
+    global DATA_DIR, SKILLS_DIR, PROJECTS_DIR
+
+    text = str(path or "").strip()
+    if not text:
+        raise ValueError("저장할 폴더를 적어주세요.")
+
+    folder = Path(text).expanduser()
+    if not folder.is_absolute():
+        folder = (Path.cwd() / folder).resolve()
+
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ValueError(f"'{folder}' 에 폴더를 만들 수 없습니다. {exc.strerror}") from exc
+
+    probe = folder / ".gyeol-write-test"
+    try:
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+    except OSError:
+        raise ValueError(f"'{folder}' 에는 쓸 권한이 없습니다. 다른 폴더를 골라주세요.") from None
+
+    DATA_DIR = folder
+    SKILLS_DIR = folder / "skills"
+    PROJECTS_DIR = folder / "projects"
+    ensure_dirs()
+    return current_paths()

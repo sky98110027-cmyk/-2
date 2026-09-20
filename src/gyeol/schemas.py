@@ -134,3 +134,133 @@ SCRIPT_SCHEMA = _obj(
         "self_check": _str_list("결 점검표를 하나씩 대조한 결과"),
     }
 )
+
+
+# ------------------------------------------------------------------- 고치기
+
+_LAYER_SCHEMA = _obj(
+    {
+        "font": {"type": "string", "description": "글꼴 이름"},
+        "size": {"type": "integer", "description": "글자 크기(px). 1920x1080 기준"},
+        "bold": {"type": "boolean", "description": "굵게 여부"},
+        "color": {"type": "string", "description": "글자 색. #RRGGBB 형식"},
+        "outline_color": {"type": "string", "description": "외곽선 색. #RRGGBB 형식"},
+        "outline": {"type": "integer", "description": "외곽선 두께(px). 0이면 없음"},
+        "position": {
+            "type": "string",
+            "enum": ["top", "middle", "bottom"],
+            "description": "세로 위치",
+        },
+        "offset": {"type": "integer", "description": "가장자리에서 띄울 거리(px)"},
+        "background": {
+            "type": "string",
+            "enum": ["none", "band", "box"],
+            "description": "글자 뒤 배경 처리",
+        },
+        "background_color": {"type": "string", "description": "배경 색. #RRGGBB 형식"},
+        "background_opacity": {"type": "number", "description": "배경 투명도. 0에서 1 사이"},
+        "line_spacing": {"type": "number", "description": "줄 간격 배수. 1.0에서 2.5 사이"},
+    }
+)
+
+STYLE_SCHEMA = _obj(
+    {
+        "aspect_ratio": {
+            "type": "string",
+            "enum": ["16:9", "9:16", "1:1"],
+            "description": "화면 비율",
+        },
+        "safe_margin": {"type": "integer", "description": "좌우 안전 여백(px)"},
+        "caption": _LAYER_SCHEMA,
+        "title": _LAYER_SCHEMA,
+    }
+)
+
+REVISE_SCHEMA = _obj(
+    {
+        "understood": {
+            "type": "string",
+            "description": "요청을 무엇으로 알아들었는지 한 문장. 형님 말투로 짧게",
+        },
+        "style": STYLE_SCHEMA,
+        "scene_changes": {
+            "type": "array",
+            "description": "글자로 고칠 것만 담는다. 안 고칠 장면은 넣지 않는다",
+            "items": _obj(
+                {
+                    "no": {"type": "integer", "description": "고칠 장면 번호"},
+                    "field": {
+                        "type": "string",
+                        "enum": [
+                            "narration",
+                            "caption",
+                            "image_prompt",
+                            "video_prompt",
+                            "bgm",
+                            "seconds",
+                        ],
+                        "description": "고칠 항목",
+                    },
+                    "new_value": {"type": "string", "description": "바꿀 내용 전체"},
+                    "reason": {"type": "string", "description": "왜 이렇게 고쳤는지 한 줄"},
+                }
+            ),
+        },
+        "regenerate_scenes": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "그림을 다시 뽑아야 하는 장면 번호. 글자만 고치면 빈 목록",
+        },
+        "done": _str_list("실제로 바꾼 것을 형님이 알아볼 말로 적은 목록"),
+        "note": {
+            "type": "string",
+            "description": "못 바꾼 것이나 미리 알아야 할 것. 없으면 빈 문자열",
+        },
+    }
+)
+
+
+# ------------------------------------------------------------------- 명령창
+
+INTENT_SCHEMA = _obj(
+    {
+        "action": {
+            "type": "string",
+            "enum": [
+                "analyze",
+                "save_skill",
+                "list_skills",
+                "produce",
+                "revise",
+                "ask",
+                "ready",
+                "help",
+                "unclear",
+            ],
+            "description": "무엇을 하라는 말인지",
+        },
+        "url": {"type": "string", "description": "영상 주소. 없으면 빈 문자열"},
+        "notes": {"type": "string", "description": "곁들인 요청이나 메모. 없으면 빈 문자열"},
+        "skill_hint": {
+            "type": "string",
+            "description": "어느 결을 쓰라고 했는지. 이름 일부여도 된다. 없으면 빈 문자열",
+        },
+        "topics": _str_list(
+            "만들 영상의 주제 목록. 한 번에 여러 개를 시켰으면 다 담는다. "
+            "하나뿐이면 하나만. 없으면 빈 목록"
+        ),
+        "minutes": {"type": "integer", "description": "목표 길이(분). 말 안 했으면 0"},
+        "folder": {
+            "type": "string",
+            "description": "결과물을 담을 폴더 이름을 지어줬으면 그대로. 안 지었으면 빈 문자열",
+        },
+        "instruction": {
+            "type": "string",
+            "description": "고쳐달라는 내용 전체. 고치기가 아니면 빈 문자열",
+        },
+        "reply": {
+            "type": "string",
+            "description": "지금 무엇을 하겠다고 형님께 드릴 한 마디. 짧고 담담하게",
+        },
+    }
+)

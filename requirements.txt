@@ -5,4 +5,5 @@ watchfiles
 anthropic
 yt-dlp
 pydantic
+python-multipart
 pytest

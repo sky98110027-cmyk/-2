@@ -105,11 +105,16 @@ def parse_vtt(raw: str) -> str:
     return _tidy(" ".join(lines))
 
 
-def _tidy(text: str) -> str:
-    """중복 공백과 바로 붙은 반복 어절을 정리한다."""
+def _tidy(text: str, dedupe: bool = True) -> str:
+    """중복 공백을 정리한다.
+
+    dedupe 는 자동 자막 전용이다. 자동 자막은 한 말을 두 번씩 뱉는다.
+    사람이 직접 쓴 대본에는 쓰지 않는다.
+    반복은 이 앱이 찾아내야 할 감정 장치라서, 지워버리면 증거가 사라진다.
+    """
     text = re.sub(r"\s+", " ", text).strip()
-    # 자동 자막은 같은 말을 두 번 뱉는 일이 잦다
-    text = re.sub(r"\b(\S+)( \1\b)+", r"\1", text)
+    if dedupe:
+        text = re.sub(r"\b(\S+)( \1\b)+", r"\1", text)
     return text
 
 
@@ -197,6 +202,6 @@ def material_from_text(text: str, title: str = "", url: str = "") -> SourceMater
     return SourceMaterial(
         url=url,
         title=title.strip(),
-        transcript=_tidy(text),
+        transcript=_tidy(text, dedupe=False),
         transcript_origin="직접 붙여넣은 대본",
     )
