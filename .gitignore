@@ -40,3 +40,5 @@ Thumbs.db
 .actrc*
 
 __pycache__/
+.venv/
+data/

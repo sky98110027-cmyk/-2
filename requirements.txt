@@ -2,3 +2,7 @@ fastapi
 uvicorn
 httpx
 watchfiles
+anthropic
+yt-dlp
+pydantic
+pytest
