@@ -23,6 +23,12 @@ def temp_data(monkeypatch):
 
         monkeypatch.setattr(connect, "ENV_FILE", root / ".env")
         monkeypatch.setattr(connect, "MCP_FILE", root / ".mcp.json")
+
+        # 유튜브 열쇠와 출입증도 진짜를 건드리면 안 된다
+        from gyeol import youtube
+
+        monkeypatch.setattr(youtube, "CLIENT_FILE", root / ".youtube-client.json")
+        monkeypatch.setattr(youtube, "TOKEN_FILE", root / ".youtube-token.json")
         for spec in connect.연결목록:
             monkeypatch.delenv(spec["key"], raising=False)
 

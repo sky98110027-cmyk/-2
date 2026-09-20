@@ -45,3 +45,5 @@ data/
 
 .env
 .mcp.json
+.youtube-client.json
+.youtube-token.json
