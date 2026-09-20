@@ -26,7 +26,7 @@ class SourceUnavailable(Exception):
 class SourceMaterial:
     """분석에 들어가는 재료 한 덩어리."""
 
-    url: str
+    url: str = ""
     title: str = ""
     uploader: str = ""
     duration: int = 0
@@ -34,6 +34,8 @@ class SourceMaterial:
     chapters: list[str] = field(default_factory=list)
     transcript: str = ""
     transcript_origin: str = "없음"
+    timed: list[dict[str, Any]] = field(default_factory=list)  # 시간 붙은 자막 조각
+    local_path: str = ""  # 받아둔 영상 파일이 있으면 여기
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -103,6 +105,69 @@ def parse_vtt(raw: str) -> str:
         if line and (not lines or lines[-1] != line):
             lines.append(line)
     return _tidy(" ".join(lines))
+
+
+def _ts(text: str) -> float:
+    """00:01:02.345 나 01:02.345 나 1.5 를 초로."""
+    text = text.strip().replace(",", ".")
+    parts = text.split(":")
+    try:
+        nums = [float(p) for p in parts]
+    except ValueError:
+        return 0.0
+    while len(nums) < 3:
+        nums.insert(0, 0.0)
+    h, m, s = nums[-3:]
+    return round(h * 3600 + m * 60 + s, 3)
+
+
+def parse_vtt_timed(raw: str) -> list[dict[str, Any]]:
+    """VTT/SRT 자막을 시간 붙은 조각으로. 타임라인에 얹을 때 쓴다."""
+    cues: list[dict[str, Any]] = []
+    start = end = None
+    buf: list[str] = []
+
+    def flush():
+        nonlocal buf, start, end
+        text = html.unescape(re.sub(r"<[^>]+>", "", " ".join(buf))).strip()
+        text = re.sub(r"\s+", " ", text)
+        if start is not None and text and (not cues or cues[-1]["text"] != text):
+            cues.append({"start": start, "end": end if end is not None else start, "text": text})
+        buf, start, end = [], None, None
+
+    for line in raw.splitlines():
+        line = line.strip()
+        if "-->" in line:
+            flush()
+            a, _, b = line.partition("-->")
+            start, end = _ts(a), _ts(b.split()[0] if b.split() else b)
+            continue
+        if not line:
+            flush()
+            continue
+        if line.startswith(("WEBVTT", "NOTE", "Kind:", "Language:")) or line.isdigit():
+            continue
+        if start is not None:
+            buf.append(line)
+    flush()
+    return cues
+
+
+def parse_json3_timed(raw: str) -> list[dict[str, Any]]:
+    """유튜브 json3 자막을 시간 붙은 조각으로."""
+    data = json.loads(raw)
+    cues: list[dict[str, Any]] = []
+    for event in data.get("events") or []:
+        segs = event.get("segs") or []
+        text = "".join(seg.get("utf8", "") for seg in segs).replace("\n", " ").strip()
+        if not text:
+            continue
+        start = round(float(event.get("tStartMs") or 0) / 1000, 3)
+        dur = round(float(event.get("dDurationMs") or 0) / 1000, 3)
+        if cues and cues[-1]["text"] == text:
+            continue
+        cues.append({"start": start, "end": round(start + dur, 3), "text": text})
+    return cues
 
 
 def _tidy(text: str, dedupe: bool = True) -> str:
@@ -183,7 +248,10 @@ def fetch_source(url: str, timeout: float = 30.0) -> SourceMaterial:
             "자막 파일을 내려받다가 끊겼습니다. 잠시 뒤에 다시 해보시거나, 대본을 직접 붙여넣어주세요."
         ) from exc
 
-    text = parse_json3(raw) if origin.endswith("json3)") else parse_vtt(raw)
+    if origin.endswith("json3)"):
+        text, timed = parse_json3(raw), parse_json3_timed(raw)
+    else:
+        text, timed = parse_vtt(raw), parse_vtt_timed(raw)
     if len(text) < 100:
         raise SourceUnavailable(
             "자막을 받긴 했는데 내용이 거의 비어 있습니다. 대본을 직접 붙여넣어주세요."
@@ -191,6 +259,7 @@ def fetch_source(url: str, timeout: float = 30.0) -> SourceMaterial:
 
     material.transcript = text
     material.transcript_origin = origin
+    material.timed = timed
     return material
 
 

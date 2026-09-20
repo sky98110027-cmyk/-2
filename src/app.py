@@ -9,10 +9,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from gyeol import batch, connect, guide, intake, picker, produce, revise, router, skillgen, source, store
+from gyeol import assemble, batch, connect, deep, guide, intake, picker, produce, providers, revise, router, skillgen, source, store, timeline
 from gyeol import style as style_mod
 from gyeol.analyze import analyze
 from gyeol.config import DEFAULT_AUDIENCE, MODEL
@@ -231,6 +231,7 @@ def api_produce(payload: dict = Body(...)):
             minutes=int(payload.get("minutes") or 5),
             extra_notes=str(payload.get("notes") or ""),
             audience=str(payload.get("audience") or DEFAULT_AUDIENCE),
+            reference=store.get_reference(slug),
         )
     except LLMUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc
@@ -475,7 +476,8 @@ def _do_produce(
 
     def 한편(topic: str) -> dict:
         script = produce.write_script(
-            skill["dna"], topic, minutes=minutes or 5, extra_notes=notes
+            skill["dna"], topic, minutes=minutes or 5, extra_notes=notes,
+            reference=store.get_reference(skill["meta"]["slug"]),
         )
         record = store.save_script(
             skill["meta"]["slug"], script, style_mod.default_style(), 폴더이름(topic)
@@ -623,6 +625,35 @@ def api_say(payload: dict = Body(...)):
         }
         return {"kind": "revised", "reply": result["understood"] or reply, "project": view}
 
+    # ------------------------------------------- 프레임 뜯기 · 목소리 · 조립
+    if action == "deep":
+        if not skills:
+            return {"kind": "message", "reply": "먼저 결을 하나 뽑아 저장해주세요. 그 원본을 뜯습니다."}
+        picked = router.pick_skill(intent.get("skill_hint") or "", skills)
+        out = api_deep(picked["slug"], {"url": intent.get("url") or ""})
+        return {"kind": "deep", "reply": out["reply"], "slug": picked["slug"], "summary": out["summary"]}
+
+    if action == "voice":
+        if not project_id:
+            return {"kind": "message", "reply": "목소리를 입힐 작업이 없습니다. 먼저 대본을 하나 만들어주세요."}
+        voice_id = str(payload.get("voice_id") or "").strip()
+        if not voice_id:
+            try:
+                voices = providers.eleven_voices()
+            except providers.ProviderUnavailable as exc:
+                raise HTTPException(503, str(exc)) from exc
+            return {"kind": "pick_voice", "reply": "어느 목소리로 읽을까요?", "voices": voices, "project_id": project_id}
+        out = api_make_voice(project_id, {"voice_id": voice_id})
+        n, f = len(out["made"]), len(out["failed"])
+        return {"kind": "voice", "reply": f"{n}컷 읽었습니다." + (f" {f}컷은 막혔습니다." if f else ""),
+                "view": out["view"], "failed": out["failed"]}
+
+    if action == "assemble":
+        if not project_id:
+            return {"kind": "message", "reply": "조립할 작업이 없습니다. 먼저 대본을 하나 만들어주세요."}
+        out = api_assemble(project_id, {})
+        return {"kind": "assembled", "reply": "묶었습니다. 아래에서 내려받으세요.", "video": out["video"], "view": out["view"]}
+
     # ------------------------------------------------- 만들 준비가 됐는지 점검
     if action == "ready":
         점검 = connect.readiness()
@@ -658,3 +689,211 @@ def api_say(payload: dict = Body(...)):
         return {"kind": "message", "reply": router.HELP_TEXT}
 
     return {"kind": "message", "reply": reply or "무슨 말씀이신지 잘 모르겠습니다. 다시 한 번 말씀해주세요."}
+
+
+# ================================================= 영상 만들기 : 타임라인과 레이어
+
+LAYER_FOLDERS = {"screen": "screen", "voice": "voice", "ambient": "ambient", "character": "character"}
+
+
+def _have_keys() -> set[str]:
+    return {c["key"] for c in connect.status() if c["connected"]}
+
+
+def _timeline_of(project_id: str) -> tuple[dict, dict, dict, dict | None]:
+    """작업 하나의 타임라인. 없으면 대본에서 펴고 레퍼런스 모양을 입힌다."""
+    record, skill = _load(project_id)
+    reference = store.get_reference(record["skill_slug"])
+    tl = store.get_timeline(project_id)
+    if tl is None:
+        tl = timeline.from_script(record["script"], record["style"])
+        if reference:
+            tl = produce.mirror_cues(reference, tl)
+        store.save_timeline(project_id, tl)
+    return record, skill, timeline.normalize(tl), reference
+
+
+def _asset_counts(project_id: str) -> dict[str, int]:
+    folder = store.project_folder(project_id)
+    out = {}
+    for layer, sub in LAYER_FOLDERS.items():
+        exts = providers.IMAGE_EXTS + providers.VIDEO_EXTS if layer in ("screen", "character") else providers.AUDIO_EXTS
+        out[layer] = len(providers.folder_assets(folder / sub, exts))
+    out["bgm"] = 1 if _bgm_file(folder) else 0
+    return out
+
+
+def _bgm_file(folder) -> "Path | None":
+    for ext in providers.AUDIO_EXTS:
+        cand = folder / f"bgm{ext}"
+        if cand.exists():
+            return cand
+    return None
+
+
+def _timeline_view(project_id: str) -> dict:
+    record, skill, tl, reference = _timeline_of(project_id)
+    folder = store.project_folder(project_id)
+    final = folder / "final.mp4"
+    return {
+        "project_id": project_id,
+        "topic": record["script"].get("topic", ""),
+        "skill_name": skill["meta"].get("name", ""),
+        "timeline": tl,
+        "summary": timeline.describe(tl),
+        "layers": timeline.provider_status(tl, _have_keys()),
+        "assets": _asset_counts(project_id),
+        "folders": {k: str(folder / v) for k, v in LAYER_FOLDERS.items()} | {"bgm": str(folder / "bgm.mp3")},
+        "has_reference": reference is not None,
+        "reference_overall": (reference or {}).get("overall"),
+        "ffmpeg": assemble.shutil.which("ffmpeg") is not None,
+        "video": f"/api/projects/{project_id}/video" if final.exists() else None,
+    }
+
+
+@app.get("/api/projects/{project_id}/timeline")
+def api_get_timeline(project_id: str):
+    return _timeline_view(project_id)
+
+
+@app.put("/api/projects/{project_id}/timeline")
+def api_put_timeline(project_id: str, payload: dict = Body(...)):
+    """레이어 제공자를 바꾸거나 큐를 손본다."""
+    _, _, tl, _ = _timeline_of(project_id)
+    if isinstance(payload.get("providers"), dict):
+        tl["providers"].update(payload["providers"])
+    if isinstance(payload.get("cues"), dict):
+        tl["cues"].update(payload["cues"])
+    if payload.get("aspect_ratio"):
+        tl["aspect_ratio"] = payload["aspect_ratio"]
+    store.save_timeline(project_id, timeline.normalize(tl))
+    return _timeline_view(project_id)
+
+
+# ------------------------------------------------------- 레퍼런스 프레임 뜯기
+
+@app.post("/api/skills/{slug}/deep")
+def api_deep(slug: str, payload: dict = Body(default={})):
+    """결 하나의 원본 영상을 프레임 단위로 뜯어 레퍼런스 타임라인을 만든다."""
+    try:
+        skill = store.get_skill(slug)
+    except store.NotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+    url = str(payload.get("url") or skill["meta"].get("source_url") or "").strip()
+    local = str(payload.get("local_path") or "").strip()
+    if not url and not local:
+        raise HTTPException(422, "이 결은 원본 영상 주소가 없습니다. 주소나 받아둔 영상 파일 경로를 넣어주세요.")
+
+    try:
+        material = source.fetch_source(url) if url else source.material_from_text(
+            (store.get_skill(slug).get("material_brief") or "가" * 200), url=""
+        )
+    except SourceUnavailable as exc:
+        if not local:
+            raise HTTPException(422, str(exc)) from exc
+        material = source.SourceMaterial(url=url)
+    if local:
+        material.local_path = local
+
+    try:
+        reference = deep.analyze_reference(material)
+    except deep.DeepUnavailable as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except LLMUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+    overall = reference.get("overall") or {}
+    reference = timeline.normalize(reference)
+    reference["overall"] = overall
+    store.save_reference(slug, reference)
+    o = {"shot_count": len(reference["shots"]), "avg_shot_seconds": 0,
+         "silence_count": 0, "music_only_count": 0, "character_pattern": "", **overall}
+    return {
+        "slug": slug,
+        "reference": reference,
+        "summary": timeline.describe(reference),
+        "reply": (
+            f"{o['shot_count']}컷을 봤습니다. 한 장면 평균 {o['avg_shot_seconds']}초, "
+            f"침묵 {o['silence_count']}번, 음악만 흐르는 구간 {o['music_only_count']}번. "
+            f"캐릭터: {o['character_pattern'] or '없음'}"
+        ),
+    }
+
+
+# ------------------------------------------------------------- 목소리 입히기
+
+@app.get("/api/voices")
+def api_voices():
+    try:
+        return {"voices": providers.eleven_voices()}
+    except providers.ProviderUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+
+@app.post("/api/projects/{project_id}/voice")
+def api_make_voice(project_id: str, payload: dict = Body(...)):
+    """장면마다 나레이션을 읽어서 voice/NN.mp3 로 남긴다."""
+    voice_id = str(payload.get("voice_id") or "").strip()
+    if not voice_id:
+        raise HTTPException(400, "어느 목소리로 읽을지 골라주세요.")
+
+    _, _, tl, _ = _timeline_of(project_id)
+    folder = store.project_folder(project_id) / "voice"
+    cues = tl["cues"].get("voice") or []
+    shots = tl["shots"]
+
+    made, failed = [], []
+    for shot, cue in zip(shots, cues):
+        if not cue.get("text", "").strip():
+            continue
+        try:
+            path = providers.eleven_speak(
+                cue["text"], voice_id, folder / f"{shot['no']:02d}.mp3",
+                speed=float(payload.get("speed") or 0.95),
+            )
+            made.append({"no": shot["no"], "file": path.name})
+        except providers.ProviderUnavailable as exc:
+            failed.append({"no": shot["no"], "error": str(exc)})
+            if "키" in str(exc):
+                break  # 키가 틀렸으면 더 해봐야 소용없다
+
+    tl["providers"]["voice"] = "elevenlabs"
+    store.save_timeline(project_id, tl)
+    return {"made": made, "failed": failed, "view": _timeline_view(project_id)}
+
+
+# ------------------------------------------------------------------- 조립
+
+@app.post("/api/projects/{project_id}/assemble")
+def api_assemble(project_id: str, payload: dict = Body(default={})):
+    """여섯 레이어를 mp4 하나로 묶는다. ffmpeg 가 있어야 한다."""
+    record, _, tl, _ = _timeline_of(project_id)
+    folder = store.project_folder(project_id)
+    prov = tl["providers"]
+
+    screen = providers.folder_assets(folder / "screen", providers.IMAGE_EXTS + providers.VIDEO_EXTS)
+    voice = providers.folder_assets(folder / "voice", providers.AUDIO_EXTS) if prov["voice"] != "none" else {}
+    ambient = providers.folder_assets(folder / "ambient", providers.AUDIO_EXTS) if prov["ambient"] != "none" else {}
+    character = providers.folder_assets(folder / "character", providers.IMAGE_EXTS) if prov["character"] != "none" else {}
+    bgm = _bgm_file(folder) if prov["bgm"] != "none" else None
+
+    steps: list[str] = []
+    try:
+        assemble.build(
+            tl, record["style"], folder / "work", folder / "final.mp4",
+            screen_assets=screen, voice_assets=voice, ambient_assets=ambient,
+            bgm_file=bgm, character_assets=character, on_step=steps.append,
+        )
+    except assemble.AssembleUnavailable as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    return {"video": f"/api/projects/{project_id}/video", "steps": steps, "view": _timeline_view(project_id)}
+
+
+@app.get("/api/projects/{project_id}/video")
+def api_video(project_id: str):
+    final = store.project_folder(project_id) / "final.mp4"
+    if not final.exists():
+        raise HTTPException(404, "아직 만들어진 영상이 없습니다. 먼저 조립해주세요.")
+    return FileResponse(str(final), media_type="video/mp4", filename=f"{project_id}.mp4")

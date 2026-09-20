@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Any
 
 from . import style as style_mod
@@ -19,6 +20,7 @@ def write_script(
     minutes: int = 5,
     extra_notes: str = "",
     audience: str = DEFAULT_AUDIENCE,
+    reference: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """결 + 주제 → 대본 한 편."""
     topic = topic.strip()
@@ -27,6 +29,9 @@ def write_script(
 
     minutes = max(1, min(int(minutes or 5), 30))
     notes = extra_notes.strip()
+    brief = reference_brief(reference)
+    if brief:
+        notes = (brief + "\n\n" + notes).strip()
 
     user = WRITER_USER.format(
         dna=json.dumps(dna, ensure_ascii=False, indent=2),
@@ -91,3 +96,54 @@ def as_production_order(
         "caption_ass_style": style_mod.to_ass_style(look, "caption"),
         "shots": shots,
     }
+
+
+# ------------------------------------------------- 레퍼런스 모양대로 새 타임라인
+
+def reference_brief(reference: dict[str, Any] | None) -> str:
+    """레퍼런스 타임라인에서 뽑은 '모양' 을 작가에게 넘길 글로."""
+    if not reference:
+        return ""
+    o = reference.get("overall") or {}
+    shots = reference.get("shots") or []
+    chars = (reference.get("cues") or {}).get("character") or []
+    lines = [
+        "[레퍼런스 영상의 모양 — 이 모양을 따라라]",
+        f"- 장면 수 {o.get('shot_count', len(shots))}컷, 한 장면 평균 {o.get('avg_shot_seconds', 0)}초",
+        f"- 말을 멈추고 침묵하는 구간 {o.get('silence_count', 0)}번, 음악만 흐르는 구간 {o.get('music_only_count', 0)}번",
+    ]
+    if o.get("visual_dna"):
+        lines.append(f"- 화면 결(영어, 모든 image_prompt 끝에 붙일 것): {o['visual_dna']}")
+    if o.get("character_pattern") and o["character_pattern"] != "없음":
+        lines.append(f"- 캐릭터 등장 규칙: {o['character_pattern']} (총 {len(chars)}번 등장)")
+    if o.get("caption_style_note"):
+        lines.append(f"- 자막: {o['caption_style_note']}")
+    for r in o.get("shot_rules") or []:
+        lines.append(f"- 화면 규칙: {r}")
+    return "\n".join(lines)
+
+
+def mirror_cues(reference: dict[str, Any], tl: dict[str, Any]) -> dict[str, Any]:
+    """레퍼런스의 캐릭터·침묵·음악 타이밍을 새 타임라인 길이에 맞춰 비례로 옮긴다.
+
+    3분짜리 레퍼런스에서 40초에 캐릭터가 떴으면, 5분짜리 새 영상에선 1분 7초쯤 뜬다.
+    """
+    ref_total = float(reference.get("total_seconds") or 0)
+    new_total = float(tl.get("total_seconds") or 0)
+    if not ref_total or not new_total:
+        return tl
+    k = new_total / ref_total
+
+    out = deepcopy(tl)
+    for key in ("character", "ambient", "bgm"):
+        if out["cues"].get(key):
+            continue  # 이미 채워져 있으면 손대지 않는다
+        for c in (reference.get("cues") or {}).get(key) or []:
+            out["cues"][key].append({
+                **c,
+                "start": round(c["start"] * k, 2),
+                "seconds": round(max(0.5, c["seconds"] * k), 2),
+                "asset": "",
+                "note": c.get("note") or ("레퍼런스 자리 따라 옮김" if key == "character" else ""),
+            })
+    return out

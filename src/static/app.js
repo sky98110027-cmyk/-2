@@ -76,6 +76,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
     if (tab.dataset.tab !== "step1") loadSkills();
     // 숨어 있던 동안에는 폭이 0이라 못 그렸다. 보이는 지금 다시 그린다.
     if (tab.dataset.tab === "step4") 미리보기();
+    if (tab.dataset.tab === "build") 영상탭열기();
     if (tab.dataset.tab === "setup") 설정읽기();
     if (tab.dataset.tab === "wire") {
       연결읽기();
@@ -274,6 +275,7 @@ async function loadSkills() {
           <button class="small" data-use="${esc(s.slug)}">이 결로 대본 쓰기</button>
           <a class="small" style="text-decoration:none;display:inline-flex;align-items:center"
              href="/api/skills/${esc(s.slug)}/skill.md">파일 내려받기</a>
+          <button class="small" data-deep="${esc(s.slug)}">화면까지 뜯기</button>
           <button class="small danger" data-del="${esc(s.slug)}">지우기</button>
         </div>
         ${스킬쓰는법(s)}
@@ -291,6 +293,10 @@ async function loadSkills() {
         $("p-topic").focus();
       })
     );
+
+  $("s-list")
+    .querySelectorAll("[data-deep]")
+    .forEach((b) => b.addEventListener("click", () => 화면까지뜯기(b.dataset.deep, b)));
 
   $("s-list")
     .querySelectorAll("[data-del]")
@@ -390,6 +396,7 @@ function renderScript(data) {
         <button class="small" id="p-copy-text">나레이션 원고 복사</button>
         <button class="small" id="p-copy-order">영상 생성 지시서 복사</button>
         <button class="small" id="p-fix">고치러 가기</button>
+        <button class="small" id="p-build">영상 만들러 가기</button>
       </div>
     </div>
 
@@ -420,6 +427,7 @@ function renderScript(data) {
     copy(JSON.stringify(data.production_order, null, 2), "지시서를")
   );
   $("p-fix").addEventListener("click", () => goTab("step4"));
+  $("p-build").addEventListener("click", () => goTab("build"));
 }
 
 /* ------------------------------------------------------------------ 시작 */
@@ -880,6 +888,38 @@ async function 답그리기(칸, res) {
     return;
   }
 
+  if (res.kind === "deep") {
+    await loadSkills();
+    답(칸, `${머리}<pre class="tl" style="margin-top:12px">${esc(res.summary)}</pre>`);
+    return;
+  }
+
+  if (res.kind === "pick_voice") {
+    답(칸, `${머리}<div class="chips">${(res.voices || [])
+      .slice(0, 12)
+      .map((v) => `<button class="chip" data-voice="${esc(v.id)}">${esc(v.name)}</button>`)
+      .join("")}</div>`);
+    칸.querySelectorAll("[data-voice]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const 다시 = 말걸기칸(`${b.textContent} 목소리로 읽어줘`);
+        try {
+          const r = await api("/api/say", postJSON({ text: "읽어줘", voice_id: b.dataset.voice,
+            state: { pending: 상태.pending, project_id: 상태.project_id } }));
+          await 답그리기(다시, r);
+        } catch (e) { 답(다시, esc(e.message), true); }
+      })
+    );
+    return;
+  }
+
+  if (res.kind === "voice" || res.kind === "assembled") {
+    영상보기 = res.view;
+    답(칸, `${머리}${res.video ? `<div class="video-box"><video controls src="${esc(res.video)}"></video></div>` : ""}
+      <div class="row"><button class="small" data-do="build">영상 만들기 탭 열기</button></div>`);
+    칸.querySelector('[data-do="build"]').addEventListener("click", () => goTab("build"));
+    return;
+  }
+
   if (res.kind === "revised") {
     상태.project_id = res.project.project_id;
     renderScript(res.project);
@@ -1284,4 +1324,180 @@ function 스킬쓰는법(s) {
         영상 생성 MCP가 붙어 있으면 장면 뽑는 것까지 이어서 합니다.
       </p>
     </details>`;
+}
+
+/* ============================================================ 영상 만들기
+
+   레이어 여섯을 한 줄씩 보여주고, 누가 채울지 꽂게 한다.
+   재료가 모이면 묶는다. 실제 일은 서버의 ffmpeg 가 한다.
+   ============================================================ */
+
+let 영상보기 = null;
+
+async function 영상탭열기() {
+  if (!상태.project_id) {
+    $("b-empty").hidden = false;
+    $("b-body").hidden = true;
+    return;
+  }
+  try {
+    영상보기 = await api(`/api/projects/${encodeURIComponent(상태.project_id)}/timeline`);
+    영상그리기();
+  } catch (e) {
+    $("b-empty").hidden = false;
+    $("b-body").hidden = true;
+    $("b-empty").textContent = e.message;
+  }
+}
+
+function 영상그리기() {
+  const v = 영상보기;
+  $("b-empty").hidden = true;
+  $("b-body").hidden = false;
+  $("b-title").textContent = `${v.topic} — ${v.skill_name} 결`;
+  $("b-summary").textContent = v.summary;
+
+  const o = v.reference_overall;
+  $("b-ref").innerHTML = v.has_reference
+    ? `<div class="mini"><div class="item">
+         <b>레퍼런스 모양을 따릅니다</b>
+         <span class="sub">${esc(o.shot_count)}컷 · 한 장면 ${esc(o.avg_shot_seconds)}초 · 침묵 ${esc(
+           o.silence_count
+         )}번 · 캐릭터 ${esc(o.character_pattern || "없음")}</span>
+         ${o.visual_dna ? `<span class="sub" style="font-family:var(--mono)">${esc(o.visual_dna)}</span>` : ""}
+       </div></div>`
+    : `<div class="msg wait">이 결은 아직 자막으로만 뜯었습니다.
+       <b>내 결</b> 탭에서 <b>화면까지 뜯기</b>를 누르면 장면 수, 캐릭터 자리, 침묵까지 따라갑니다.</div>`;
+
+  $("b-layers").innerHTML = v.layers
+    .map(
+      (l) => `
+    <div class="layer" data-layer="${esc(l.layer)}">
+      <div><span class="lname">${esc(l.name)}</span><span class="lwhat">${esc(l.what)}</span></div>
+      <div>
+        <select data-prov="${esc(l.layer)}">
+          ${l.options
+            .map(
+              (p) => `<option value="${esc(p.id)}" ${p.id === l.provider ? "selected" : ""}>${esc(
+                p.name
+              )}${p.ready ? "" : " (연결 안 됨)"}</option>`
+            )
+            .join("")}
+        </select>
+      </div>
+      <div class="lstate">
+        <span class="badge ${l.ready ? "on" : "off"}">${l.ready ? "준비됨" : "연결 필요"}</span>
+        <span class="lcount">${esc(l.count)}칸 · 재료 ${esc(v.assets[l.layer] ?? 0)}개</span>
+      </div>
+      <div class="meta">${esc(l.note)}</div>
+      ${v.folders[l.layer] ? `<div class="lpath">${esc(v.folders[l.layer])}</div>` : ""}
+    </div>`
+    )
+    .join("");
+
+  $("b-layers")
+    .querySelectorAll("[data-prov]")
+    .forEach((sel) =>
+      sel.addEventListener("change", async () => {
+        try {
+          영상보기 = await api(
+            `/api/projects/${encodeURIComponent(상태.project_id)}/timeline`,
+            Object.assign(postJSON({ providers: { [sel.dataset.prov]: sel.value } }), { method: "PUT" })
+          );
+          영상그리기();
+          toast("바꿨습니다");
+        } catch (e) {
+          toast(e.message);
+        }
+      })
+    );
+
+  $("b-assemble").disabled = !v.ffmpeg;
+  $("b-assemble").textContent = v.ffmpeg ? "조립해서 mp4로 뽑기" : "조립하려면 ffmpeg가 필요합니다";
+
+  if (v.video) {
+    $("b-out").innerHTML = `<div class="video-box">
+      <video controls src="${esc(v.video)}"></video>
+      <div class="row"><a class="small" href="${esc(v.video)}" download>mp4 내려받기</a></div>
+    </div>`;
+  }
+}
+
+$("b-voice").addEventListener("click", async () => {
+  const btn = $("b-voice");
+  btn.disabled = true;
+  try {
+    const { voices } = await api("/api/voices");
+    $("b-voice-pick").innerHTML = voices
+      .map((v) => `<option value="${esc(v.id)}">${esc(v.name)}${v.gender ? ` · ${esc(v.gender)}` : ""}${
+        v.age ? ` · ${esc(v.age)}` : ""}</option>`)
+      .join("");
+    $("b-voices").hidden = false;
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("b-voice-cancel").addEventListener("click", () => ($("b-voices").hidden = true));
+
+$("b-voice-go").addEventListener("click", async () => {
+  const btn = $("b-voice-go");
+  btn.disabled = true;
+  btn.textContent = "읽는 중입니다…";
+  showWaiting("b-out", "장면마다 나레이션을 읽고 있습니다. 컷 수만큼 걸립니다.");
+  try {
+    const r = await api(
+      `/api/projects/${encodeURIComponent(상태.project_id)}/voice`,
+      postJSON({ voice_id: $("b-voice-pick").value })
+    );
+    영상보기 = r.view;
+    영상그리기();
+    $("b-voices").hidden = true;
+    $("b-out").innerHTML = `<div class="box">
+      <h3>${r.made.length}컷 읽었습니다</h3>
+      ${r.failed.length ? `<div class="warn-box">${r.failed.map((f) => `${esc(f.no)}번 — ${esc(f.error)}`).join("<br>")}</div>` : ""}
+    </div>`;
+    toast(`${r.made.length}컷 읽었습니다`);
+  } catch (e) {
+    showError("b-out", e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "이 목소리로 다 읽기";
+  }
+});
+
+$("b-assemble").addEventListener("click", async () => {
+  const btn = $("b-assemble");
+  btn.disabled = true;
+  btn.textContent = "묶는 중입니다…";
+  showWaiting("b-out", "장면을 만들고, 잇고, 소리와 자막을 얹고 있습니다. 몇 분 걸립니다.");
+  try {
+    const r = await api(`/api/projects/${encodeURIComponent(상태.project_id)}/assemble`, postJSON({}));
+    영상보기 = r.view;
+    영상그리기();
+    toast("mp4 가 나왔습니다");
+  } catch (e) {
+    showError("b-out", e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "조립해서 mp4로 뽑기";
+  }
+});
+
+/* 내 결 카드의 '화면까지 뜯기' */
+async function 화면까지뜯기(slug, btn) {
+  btn.disabled = true;
+  btn.textContent = "뜯는 중… (몇 분)";
+  try {
+    const r = await api(`/api/skills/${encodeURIComponent(slug)}/deep`, postJSON({}));
+    toast(r.reply);
+    await loadSkills();
+    if (상태.project_id) 영상탭열기();
+  } catch (e) {
+    toast(e.message);
+    btn.disabled = false;
+    btn.textContent = "화면까지 뜯기";
+  }
 }

@@ -953,3 +953,68 @@ code { font-family: var(--mono); font-size: 0.92em; background: var(--paper-2); 
   .say-wrap { padding: 18px 18px 16px; }
   .scene { grid-template-columns: 28px minmax(0, 1fr); }
 }
+
+/* ------------------------------------------------------------- 영상 만들기 */
+
+[hidden] { display: none !important; }
+
+pre.tl {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  max-height: 220px;
+  margin: 0 0 12px;
+}
+
+.layers { display: flex; flex-direction: column; }
+
+.layer {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 190px auto;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.layer:first-child { border-top: none; }
+
+.layer .lname {
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.layer .lwhat { font-size: 13.5px; color: var(--ink-3); display: block; }
+
+.layer select { padding: 9px 36px 9px 12px; font-size: 15px; }
+
+.layer .lstate { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-width: 92px; }
+
+.layer .lcount { font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+.layer .lpath {
+  grid-column: 2 / -1;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  word-break: break-all;
+}
+
+.voices {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+}
+
+.video-box { margin-top: 16px; }
+
+.video-box video { width: 100%; border-radius: var(--r-sm); background: #000; box-shadow: var(--shadow-lift); }
+
+@media (max-width: 860px) {
+  .layer { grid-template-columns: 1fr; gap: 6px; }
+  .layer .lstate { flex-direction: row; gap: 10px; }
+  .layer .lpath { grid-column: 1; }
+}

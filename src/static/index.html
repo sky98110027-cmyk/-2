@@ -28,6 +28,7 @@
   <button class="tab" data-tab="step2">내 결</button>
   <button class="tab" data-tab="step3">대본 만들기</button>
   <button class="tab" data-tab="step4">고치기</button>
+  <button class="tab" data-tab="build">영상 만들기</button>
   <button class="tab" data-tab="wire">연결</button>
   <button class="tab" data-tab="setup">설정</button>
 </nav>
@@ -231,6 +232,49 @@
       <summary>고친 내력 보기</summary>
       <div id="r-hist"></div>
     </details>
+  </div>
+</section>
+
+<!-- ------------------------------------------------ 영상 만들기 -->
+<section id="build" class="panel">
+  <p class="lead">
+    영상 한 편은 시간 축 하나 위에 <b>레이어 여섯</b>이 얹힌 것입니다.<br>
+    레이어마다 누가 채울지 꽂고, 재료가 모이면 묶어서 mp4로 뽑습니다.
+  </p>
+
+  <div id="b-empty" class="msg wait">3단계에서 대본을 먼저 만들어주세요.</div>
+
+  <div id="b-body" hidden>
+    <div class="box">
+      <h3 id="b-title">작업</h3>
+      <pre id="b-summary" class="tl"></pre>
+      <div id="b-ref"></div>
+    </div>
+
+    <div class="box">
+      <h3>레이어</h3>
+      <p class="meta">위에서부터 아래로 쌓입니다. 재료는 작업 폴더 안 같은 이름의 폴더에 장면 번호대로 넣으시면 됩니다.</p>
+      <div id="b-layers" class="layers"></div>
+    </div>
+
+    <div class="box">
+      <h3>만들기</h3>
+      <div class="row">
+        <button class="small" id="b-voice">목소리 입히기</button>
+        <button class="big" id="b-assemble" style="flex:1">조립해서 mp4로 뽑기</button>
+      </div>
+      <div id="b-voices" class="voices" hidden>
+        <label class="field">
+          <span>어느 목소리로 읽을까요</span>
+          <select id="b-voice-pick"></select>
+        </label>
+        <div class="row">
+          <button class="big" id="b-voice-go" style="flex:1">이 목소리로 다 읽기</button>
+          <button class="small" id="b-voice-cancel">취소</button>
+        </div>
+      </div>
+      <div id="b-out" class="out"></div>
+    </div>
   </div>
 </section>
 

@@ -401,3 +401,40 @@ def set_data_dir(path: str) -> dict[str, str]:
     PROJECTS_DIR = folder / "projects"
     ensure_dirs()
     return current_paths()
+
+
+# ---------------------------------------------------- 레퍼런스와 타임라인 보관
+
+def save_reference(slug: str, reference: dict[str, Any]) -> Path:
+    """뜯어낸 레퍼런스 타임라인을 결 폴더에 같이 둔다."""
+    folder = SKILLS_DIR / _safe(slug)
+    if not folder.exists():
+        raise NotFound(f"'{slug}' 스킬을 찾을 수 없습니다.")
+    path = folder / "reference.json"
+    _write_json(path, reference)
+    return path
+
+
+def get_reference(slug: str) -> dict[str, Any] | None:
+    path = SKILLS_DIR / _safe(slug) / "reference.json"
+    return _read_json(path) if path.exists() else None
+
+
+def save_timeline(project_id: str, tl: dict[str, Any]) -> Path:
+    """작업 폴더에 타임라인을 둔다. 조립할 때 이걸 읽는다."""
+    folder = _project_folder(project_id)
+    if not (folder / "script.json").exists():
+        raise NotFound(f"'{project_id}' 작업을 찾을 수 없습니다.")
+    path = folder / "timeline.json"
+    _write_json(path, tl)
+    return path
+
+
+def get_timeline(project_id: str) -> dict[str, Any] | None:
+    path = _project_folder(project_id) / "timeline.json"
+    return _read_json(path) if path.exists() else None
+
+
+def project_folder(project_id: str) -> Path:
+    """조립 결과물과 재료 폴더가 여기 아래 생긴다."""
+    return _project_folder(project_id)

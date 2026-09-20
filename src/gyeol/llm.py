@@ -97,3 +97,65 @@ def structured(
 
 def api_key_present() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+
+
+def structured_with_images(
+    *,
+    system: str,
+    text: str,
+    images: list[bytes],
+    schema: dict[str, Any],
+    media_type: str = "image/jpeg",
+    max_tokens: int = 16000,
+    effort: str = "high",
+) -> dict[str, Any]:
+    """그림 여러 장을 같이 보여주고 스키마에 맞는 JSON 하나를 받는다.
+
+    레퍼런스 영상에서 뽑은 장면 그림을 클로드가 보게 할 때 쓴다.
+    """
+    import base64
+
+    client = _client()
+    import anthropic
+
+    content: list[dict[str, Any]] = []
+    for i, data in enumerate(images, 1):
+        content.append({"type": "text", "text": f"[그림 {i}]"})
+        content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": base64.standard_b64encode(data).decode("ascii"),
+                },
+            }
+        )
+    content.append({"type": "text", "text": text})
+
+    try:
+        with client.messages.stream(
+            model=MODEL,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": content}],
+            thinking={"type": "adaptive"},
+            output_config={
+                "effort": effort,
+                "format": {"type": "json_schema", "schema": schema},
+            },
+        ) as stream:
+            message = stream.get_final_message()
+    except anthropic.APIError as exc:
+        raise _to_error(exc) from exc
+    except Exception as exc:
+        raise _to_error(exc) from exc
+
+    if message.stop_reason == "refusal":
+        raise LLMUnavailable("클로드가 이 그림들은 보지 않겠다고 답했습니다.")
+
+    out = next((b.text for b in message.content if b.type == "text"), "")
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError as exc:
+        raise LLMUnavailable("받은 응답이 깨졌습니다. 다시 한 번 눌러주세요.") from exc
